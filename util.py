@@ -279,7 +279,7 @@ def BSpline_IV(X, M, Y, t, n_components=4, ridge=0):
     # Step 2: Normalize M
     # ==================================================
     M_mean = M.mean(axis=0)
-    M_std = M.std(axis=0)
+    M_std = 1 # M.std(axis=0)
 
     # M_std[M_std == 0] = 1
 
@@ -339,8 +339,6 @@ def BSpline_IV(X, M, Y, t, n_components=4, ridge=0):
           + n_components * np.log(n)
 
     return beta_hat, bic
-
-import numpy as np
 
 def generate_functional_data_SNR(n, T, SNR, seed=None):
     """
