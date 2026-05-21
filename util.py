@@ -61,7 +61,7 @@ def fpca_plain(W, Y, t, n_components=3, ridge=0.0):
 
     return beta_hat, BIC
 
-def fpca_iv(M, W, Y, t, n_components=3, ridge=0, s=1):
+def fpca_iv(W, M, Y, t, n_components=3, ridge=0, s=1):
     """
     FPCA-based Functional IV Regression
     with normalization (mean 0, std 1)
@@ -128,13 +128,13 @@ def fpca_iv(M, W, Y, t, n_components=3, ridge=0, s=1):
     # ==================================================
     # Step 4: Build functional object
     # ==================================================
-    M_fd = skfda.FDataGrid(M_norm, grid_points=t)
+    W_fd = skfda.FDataGrid(W_norm, grid_points=t)
 
     # ==================================================
     # Step 5: FPCA on M
     # ==================================================
     fpca = FPCA(n_components=n_components)
-    fpca.fit(M_fd)
+    fpca.fit(W_fd)
 
     phi = fpca.components_
     phi_eval = phi(t)[:, :, 0]    # (K, T)
@@ -204,15 +204,19 @@ def BSpline_plain(W, Y, t, n_components=6):
     # B-spline basis
     basis = BSplineBasis(n_basis=n_components)
 
+    #Center Y, W
+    Y_center = Y - Y.mean()
+    W_center = W - W.mean(axis=0)
+
     # 取出真正的 (K, T)
     Phi = basis(t)[:, :, 0]
 
     # 計算 Z = ∫ W(t) φ(t) dt
-    Z = W @ Phi.T * dt   # (n, K)
+    Z = W_center @ Phi.T * dt   # (n, K)
 
     # 做一般線性回歸
     reg = LinearRegression(fit_intercept=False)
-    reg.fit(Z, Y)
+    reg.fit(Z, Y_center)
 
     theta = reg.coef_  # (K,)
 
@@ -221,14 +225,14 @@ def BSpline_plain(W, Y, t, n_components=6):
 
     # Prediction
     Y_hat = reg.predict(Z)
-    rss = np.sum((Y - Y_hat) ** 2)
+    rss = np.sum((Y_center - Y_hat) ** 2)
 
     k = n_components
     bic = n * np.log(rss / n) + k * np.log(n)
 
     return beta_hat, bic
 
-def BSpline_IV(X, M, Y, t, n_components=4, ridge=0):
+def BSpline_IV(W, M, Y, t, n_components=4, ridge=0):
     """
     B-spline Functional IV Regression
     with normalization (mean 0, std 1)
@@ -261,19 +265,19 @@ def BSpline_IV(X, M, Y, t, n_components=4, ridge=0):
         Bayesian Information Criterion
     """
 
-    n, T = X.shape
+    n, T = W.shape
 
     dt = t[1] - t[0]
 
     # ==================================================
     # Step 1: Normalize X
     # ==================================================
-    X_mean = X.mean(axis=0)
-    X_std = 1 #X.std(axis=0)
+    W_mean = W.mean(axis=0)
+    W_std = 1 #X.std(axis=0)
 
     # X_std[X_std == 0] = 1
 
-    X_norm = (X - X_mean) / X_std
+    W_norm = (W - W_mean) / W_std
 
     # ==================================================
     # Step 2: Normalize M
@@ -302,7 +306,7 @@ def BSpline_IV(X, M, Y, t, n_components=4, ridge=0):
     # Step 5: Projection scores
     # ==================================================
     M_scores = M_norm @ phi_eval.T * dt
-    W_scores = X_norm @ phi_eval.T * dt
+    W_scores = W_norm @ phi_eval.T * dt
 
     # ==================================================
     # Step 6: Covariance in score space
