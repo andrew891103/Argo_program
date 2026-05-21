@@ -38,7 +38,7 @@ def plot_bic_selection(
     fpca_iv_range = range(1, fpca_iv_max_k + 1)
     bics = []
     for k in fpca_iv_range:
-        _, bic = fpca_iv(M, W, Y, t, n_components=k)
+        _, bic = fpca_iv(W, M, Y, t, n_components=k)
         bics.append(bic)
 
     best_idx = np.argmin(bics)
@@ -97,10 +97,10 @@ def plot_bic_selection(
 
     plt.show()
 
-SNR = 50
+SNR = 1
 
 X, W, M, Y, beta_true, t = util.generate_functional_data_SNR(
-    n=20000, T=100, SNR=SNR
+    n=30000, T=100, SNR=SNR
 )
 
 plot_bic_selection(
