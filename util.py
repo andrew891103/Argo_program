@@ -169,10 +169,10 @@ def fpca_iv(W, M, Y, t, n_components=3, ridge=0, s=1):
     # ==================================================
     # Step 10: Prediction
     # ==================================================
-    Y_hat = np.array([
-        np.trapezoid(beta_hat * W_norm[i], t)
-        for i in range(len(W_norm))
-    ])
+    # Y_hat = np.array([
+    #     np.trapezoid(beta_hat * W_norm[i], t)
+    #     for i in range(len(W_norm))
+    # ])
 
     # ==================================================
     # Step 11: BIC
