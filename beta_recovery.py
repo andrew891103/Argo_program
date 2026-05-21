@@ -26,7 +26,7 @@ def plot_beta_comparison(
     ax.grid()
 
     # ===== FPCA IV =====
-    beta_hat, _ = fpca_iv(M, W, Y, t, n_components=k_fpca_iv)
+    beta_hat, _ = fpca_iv(W, M, Y, t, n_components=k_fpca_iv)
     ax = axes[1]
     ax.plot(t, beta_hat)
     ax.plot(t, beta_true)
@@ -48,7 +48,7 @@ def plot_beta_comparison(
     ax.grid()
 
     # ===== BSpline IV =====
-    beta_hat, _ = BSpline_IV(M, W, Y, t, n_components=k_spline_iv)
+    beta_hat, _ = BSpline_IV(W, M, Y, t, n_components=k_spline_iv)
     ax = axes[3]
     ax.plot(t, beta_hat)
     ax.plot(t, beta_true)
@@ -63,22 +63,22 @@ def plot_beta_comparison(
 
     plt.show()
 
-SNR = 50
+SNR = 1
 
 X, W, M, Y, beta_true, t = util.generate_functional_data_SNR(
-    n=20000, T=100, SNR=SNR
+    n=30000, T=100, SNR=SNR
 )
 
 plot_beta_comparison(
     W, M, Y, t, beta_true,
-    k_fpca_plain=1,
+    k_fpca_plain=55,
     k_fpca_iv=1,
-    k_spline_plain=4,
-    k_spline_iv=4,
+    k_spline_plain=6,
+    k_spline_iv=7,
     fig_title=f"Beta Recovery under SNR={SNR}"
 )
 
-# beta_hat1, _ = fpca_plain(W, Y, t, n_components=99)
-# beta_hat2, _ = fpca_iv(M, W, Y, t, n_components=99)
+# beta_hat1, _ = BSpline_plain(W, Y, t, n_components=4)
+# beta_hat2, _ = BSpline_IV(W, M, Y, t, n_components=4)
 # print("beta_hat1,",beta_hat1,'/n',"beta_hat2,",beta_hat2)
 
