@@ -4,60 +4,72 @@ from skfda.preprocessing.dim_reduction import FPCA
 from skfda.representation.basis import BSplineBasis
 from sklearn.linear_model import LinearRegression
 
-def fpca_plain(W, Y, t, n_components=3, ridge=0.0):
+def fpca_plain(W, Y, t, n_components=3, ridge=0):
     """
-    Correct FPCA-based scalar-on-function regression
-    using proper functional inner products.
+    FPCA-based scalar-on-function regression (NO IV)
+
+    Parameters
+    ----------
+    W : (n, T) matrix
+    Y : (n,) vector
+    t : (T,) grid
+    n_components : FPCA components K
+    ridge : regularization
+
+    Returns
+    -------
+    gamma : (K,) coefficient in FPCA basis
+    phi_eval : (K, T) eigenfunctions evaluated on grid
+    beta_hat : (T,) reconstructed beta(t)
+    W_scores : (n, K) FPCA scores
+    Y_hat_score : (n,) prediction in score space
+    sigma2 : residual variance
     """
 
-    n, T = W.shape
     dt = t[1] - t[0]
+    n, T = W.shape
 
-    # ==================================================
-    # Step 1: Center W and Y
-    # ==================================================
-    W_center = W - W.mean(axis=0)
-    Y_center = Y - Y.mean()
+    # ========= Step 1: 建立 FDataGrid =========
+    W_fd = skfda.FDataGrid(W, grid_points=t)
 
-    # ==================================================
-    # Step 2: FPCA to get eigenfunctions
-    # ==================================================
-    W_fd = skfda.FDataGrid(W_center, grid_points=t)
-
+    # ========= Step 2: FPCA on W =========
     fpca = FPCA(n_components=n_components)
     fpca.fit(W_fd)
 
-    # eigenfunctions φ_k(t)  → (K, T)
-    phi = fpca.components_(t)[:, :, 0]
+    # print("Explained variance ratio sum:",
+    #       sum(fpca.explained_variance_ratio_))
 
-    # ==================================================
-    # Step 3: Compute TRUE functional scores
-    #   ξ_ik = ∫ W_i(t) φ_k(t) dt
-    # ==================================================
-    W_scores = W_center @ phi.T * dt   # (n, K)
+    phi = fpca.components_
+    phi_eval = phi(t)[:, :, 0]      # (K, T)
 
-    # ==================================================
-    # Step 4: OLS in score space
-    # ==================================================
+    # ========= Step 3: 中心化 =========
+    W_center = W - W.mean(axis=0)
+    Y_center = Y - Y.mean()
+
+    # ========= Step 4: 計算 FPCA scores =========
+    W_scores = W_center @ phi_eval.T * dt   # ξ_ik
+
+    # ========= Step 5: OLS 解 gamma =========
     A = W_scores.T @ W_scores + ridge * np.eye(n_components)
     b = W_scores.T @ Y_center
 
     gamma = np.linalg.solve(A, b)
 
-    # ==================================================
-    # Step 5: Reconstruct beta(t)
-    #   β(t) = Σ γ_k φ_k(t)
-    # ==================================================
-    beta_hat = gamma @ phi  # (T,)
+    # ========= Step 6: 還原 beta(t) =========
+    beta_hat = gamma @ phi_eval
 
-    # ==================================================
-    # Step 6: Prediction using integral form
-    # ==================================================
-    Y_hat = W_scores @ gamma
-    rss = np.sum((Y_center - Y_hat) ** 2)
+    # ========= Step 7: 預測 =========
+    Y_hat_score = W_scores @ gamma
+
+    rss = np.sum((Y_center - Y_hat_score) ** 2)
 
     sigma2 = rss / n
-    BIC = n * np.log(sigma2) + n_components * np.log(n)
+
+    K = n_components
+    BIC = n * np.log(sigma2) + K * np.log(n)
+
+    R2 = 1 - rss / np.sum((Y_center - Y_center.mean())**2)
+    # print("R^2 =", R2)
 
     return beta_hat, BIC
 
@@ -204,12 +216,19 @@ def BSpline_plain(W, Y, t, n_components=6):
     # B-spline basis
     basis = BSplineBasis(n_basis=n_components)
 
-    #Center Y, W
+    # Center Y, W
     Y_center = Y - Y.mean()
     W_center = W - W.mean(axis=0)
 
     # 取出真正的 (K, T)
     Phi = basis(t)[:, :, 0]
+
+    # =========================
+    # Gram correction
+    # =========================
+    G = Phi @ Phi.T * dt
+    L = np.linalg.cholesky(G)
+    Phi = np.linalg.solve(L, Phi)
 
     # 計算 Z = ∫ W(t) φ(t) dt
     Z = W_center @ Phi.T * dt   # (n, K)
@@ -233,49 +252,16 @@ def BSpline_plain(W, Y, t, n_components=6):
     return beta_hat, bic
 
 def BSpline_IV(W, M, Y, t, n_components=4, ridge=0):
-    """
-    B-spline Functional IV Regression
-    with normalization (mean 0, std 1)
-
-    Parameters
-    ----------
-    X : (n, T) matrix
-        Functional predictors
-
-    M : (n, T) matrix
-        Instrument functions
-
-    Y : (n,) vector
-        Scalar response
-
-    t : (T,) grid
-
-    n_components : int
-        Number of B-spline basis functions
-
-    ridge : float
-        Ridge regularization
-
-    Returns
-    -------
-    beta_hat : (T,)
-        Estimated coefficient function
-
-    bic : float
-        Bayesian Information Criterion
-    """
 
     n, T = W.shape
 
     dt = t[1] - t[0]
 
     # ==================================================
-    # Step 1: Normalize X
+    # Step 1: Normalize W
     # ==================================================
     W_mean = W.mean(axis=0)
-    W_std = 1 #X.std(axis=0)
-
-    # X_std[X_std == 0] = 1
+    W_std = 1
 
     W_norm = (W - W_mean) / W_std
 
@@ -283,9 +269,7 @@ def BSpline_IV(W, M, Y, t, n_components=4, ridge=0):
     # Step 2: Normalize M
     # ==================================================
     M_mean = M.mean(axis=0)
-    M_std = 1 # M.std(axis=0)
-
-    # M_std[M_std == 0] = 1
+    M_std = 1
 
     M_norm = (M - M_mean) / M_std
 
@@ -299,8 +283,14 @@ def BSpline_IV(W, M, Y, t, n_components=4, ridge=0):
     # ==================================================
     basis = BSplineBasis(n_basis=n_components)
 
-    # (K, T)
     phi_eval = basis.evaluate(t)[:, :, 0]
+
+    # =========================
+    # Gram correction
+    # =========================
+    G = phi_eval @ phi_eval.T * dt
+    L = np.linalg.cholesky(G)
+    phi_eval = np.linalg.solve(L, phi_eval)
 
     # ==================================================
     # Step 5: Projection scores
@@ -317,9 +307,7 @@ def BSpline_IV(W, M, Y, t, n_components=4, ridge=0):
     # ==================================================
     # Step 7: Solve gamma
     # ==================================================
-    A = Cov_WM.T @ Cov_WM \
-        + ridge * np.eye(n_components)
-
+    A = Cov_WM.T @ Cov_WM + ridge * np.eye(n_components)
     b = Cov_WM.T @ Cov_YM
 
     gamma = np.linalg.solve(A, b)
@@ -339,8 +327,7 @@ def BSpline_IV(W, M, Y, t, n_components=4, ridge=0):
     # ==================================================
     # Step 10: BIC
     # ==================================================
-    bic = n * np.log(rss / n) \
-          + n_components * np.log(n)
+    bic = n * np.log(rss / n) + n_components * np.log(n)
 
     return beta_hat, bic
 
@@ -411,5 +398,123 @@ def generate_functional_data_SNR(n, T, SNR, seed=None):
 
     return X, W, M, Y, beta_true, t
 
+def generate_functional_data_FPCA(
+    n,
+    T,
+    SNR,
+    seed=None,
+    K_true=3
+):
+    """
+    Generate FPCA-friendly functional regression data.
 
+    Model:
+        X_i(t) = sum_k a_ik phi_k(t)
+
+    SNR := Var(X) / Var(U)
+
+    Returns
+    -------
+    X, W, M, Y, beta_true, t
+    """
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    # --------------------------------------------------
+    # Grid
+    # --------------------------------------------------
+    t = np.linspace(0, 1, T)
+    dt = t[1] - t[0]
+
+    # --------------------------------------------------
+    # True beta(t)
+    # --------------------------------------------------
+    beta_true = (
+        1.5 * np.sin(2 * np.pi * t)
+        + 0.5 * np.cos(4 * np.pi * t)
+    )
+
+    # --------------------------------------------------
+    # True eigenfunctions phi_k(t)
+    # orthonormal-ish basis
+    # --------------------------------------------------
+    phi1 = np.sqrt(2) * np.sin(np.pi * t)
+    phi2 = np.sqrt(2) * np.cos(2 * np.pi * t)
+    phi3 = np.sqrt(2) * np.sin(3 * np.pi * t)
+
+    Phi = np.vstack([phi1, phi2, phi3])[:K_true]
+
+    # --------------------------------------------------
+    # FPCA scores
+    # decreasing eigenvalues
+    # --------------------------------------------------
+    lambdas = np.array([1.5, 0.7, 0.3])[:K_true]
+
+    scores = np.random.normal(
+        0,
+        np.sqrt(lambdas),
+        size=(n, K_true)
+    )
+
+    # --------------------------------------------------
+    # Construct latent X(t)
+    # --------------------------------------------------
+    X = scores @ Phi
+
+    # small smooth residual variation
+    X += 0.05 * np.random.normal(size=(n, T))
+
+    # --------------------------------------------------
+    # SNR calibration
+    # --------------------------------------------------
+    var_X = np.var(X)
+
+    sigma_U = np.sqrt(var_X / SNR)
+
+    # --------------------------------------------------
+    # Noises
+    # --------------------------------------------------
+    sigma_eps = 0.05
+    sigma_omega = 0.25
+
+    U = np.random.normal(0, sigma_U, size=(n, T))
+    omega = np.random.normal(0, sigma_omega, size=(n, T))
+
+    # --------------------------------------------------
+    # Observed functional variables
+    # --------------------------------------------------
+    W = X + U
+
+    # IV process
+    M = X + omega
+
+    # --------------------------------------------------
+    # Scalar response
+    # --------------------------------------------------
+    signal = np.trapezoid(
+        beta_true * X,
+        t,
+        axis=1
+    )
+
+    Y = signal + np.random.normal(
+        0,
+        sigma_eps,
+        size=n
+    )
+
+    # --------------------------------------------------
+    # Diagnostics
+    # --------------------------------------------------
+    print(f"SNR target = {SNR}")
+    print(f"sigma_U = {sigma_U:.4f}")
+    print(f"Var(X) = {var_X:.4f}")
+
+    explained = lambdas / np.sum(lambdas)
+
+    print("True variance ratios:")
+    print(explained)
+
+    return X, W, M, Y, beta_true, t
 
