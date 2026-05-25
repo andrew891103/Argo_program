@@ -421,6 +421,11 @@ def generate_functional_data_FPCA(
     if seed is not None:
         np.random.seed(seed)
 
+    if K_true > 7:
+        raise ValueError(
+            "Current implementation only supports K_true <= 7"
+        )
+
     # --------------------------------------------------
     # Grid
     # --------------------------------------------------
@@ -442,14 +447,34 @@ def generate_functional_data_FPCA(
     phi1 = np.sqrt(2) * np.sin(np.pi * t)
     phi2 = np.sqrt(2) * np.cos(2 * np.pi * t)
     phi3 = np.sqrt(2) * np.sin(3 * np.pi * t)
+    phi4 = np.sqrt(2) * np.cos(4 * np.pi * t)
+    phi5 = np.sqrt(2) * np.sin(5 * np.pi * t)
+    phi6 = np.sqrt(2) * np.cos(6 * np.pi * t)
+    phi7 = np.sqrt(2) * np.sin(7 * np.pi * t)
 
-    Phi = np.vstack([phi1, phi2, phi3])[:K_true]
+    Phi = np.vstack([
+        phi1,
+        phi2,
+        phi3,
+        phi4,
+        phi5,
+        phi6,
+        phi7
+    ])[:K_true]
 
     # --------------------------------------------------
     # FPCA scores
     # decreasing eigenvalues
     # --------------------------------------------------
-    lambdas = np.array([1.5, 0.7, 0.3])[:K_true]
+    lambdas = np.array([
+        1.5,
+        0.7,
+        0.3,
+        0.15,
+        0.08,
+        0.04,
+        0.02
+    ])[:K_true]
 
     scores = np.random.normal(
         0,
