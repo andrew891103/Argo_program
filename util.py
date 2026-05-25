@@ -543,3 +543,81 @@ def generate_functional_data_FPCA(
 
     return X, W, M, Y, beta_true, t
 
+def generate_functional_data_decreasing_variance(n, T, SNR, seed=None):
+    """
+    Generate functional regression data where variance decreases as t increases.
+
+    Large variance near t=0
+    Small variance near t=1
+    """
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    # --------------------------------------------------
+    # Grid
+    # --------------------------------------------------
+    t = np.linspace(0, 1, T)
+
+    # --------------------------------------------------
+    # True beta
+    # --------------------------------------------------
+    beta_true = np.sin(2 * np.pi * t)
+
+    # --------------------------------------------------
+    # Heteroscedastic variance structure
+    # variance decreases as t increases
+    # --------------------------------------------------
+    sigma_X_t = 0.5 * (1 - t) + 0.02
+
+    # --------------------------------------------------
+    # Latent X(t)
+    # --------------------------------------------------
+    mean_function = np.sin(2 * np.pi * t)
+
+    X = (
+        mean_function[None, :]
+        + np.random.normal(
+            0,
+            sigma_X_t,
+            size=(n, T)
+        )
+    )
+
+    # empirical Var(X)
+    var_X = np.var(X)
+
+    # --------------------------------------------------
+    # Back-solve sigma_U from SNR
+    # --------------------------------------------------
+    sigma_U = np.sqrt(var_X / SNR)
+
+    # --------------------------------------------------
+    # Noises
+    # --------------------------------------------------
+    sigma_eps = 0.05
+    sigma_omega = 0.25
+
+    U = np.random.normal(0, sigma_U, size=(n, T))
+    omega = np.random.normal(0, sigma_omega, size=(n, T))
+
+    # --------------------------------------------------
+    # Observed processes
+    # --------------------------------------------------
+    W = X + U
+    M = X + omega
+
+    # --------------------------------------------------
+    # Response
+    # --------------------------------------------------
+    signal = np.trapezoid(beta_true * X, t, axis=1)
+
+    Y = signal + np.random.normal(0, sigma_eps, size=n)
+
+    # --------------------------------------------------
+    # Diagnostics
+    # --------------------------------------------------
+    print(f"SNR target = {SNR}(Noise @ {100*1/SNR}%)")
+    print(f"sigma_U set to {sigma_U:.4f}")
+
+    return X, W, M, Y, beta_true, t
