@@ -1,5 +1,6 @@
 import numpy as np
 import skfda
+import xarray as xr
 from skfda.preprocessing.dim_reduction import FPCA
 from skfda.representation.basis import BSplineBasis
 from sklearn.linear_model import LinearRegression
@@ -806,3 +807,99 @@ def generate_functional_data_decreasing_variance_GP(
     print(f"sigma_U set to {sigma_U:.4f}")
 
     return X, W, M, Y, beta_true, t
+
+def extract_argo_data(
+    nc_path=r"E:\argo_program\argo_weekly_profiles_2020_2024.nc",
+    weekly_price=None
+):
+    """
+    Extract ARGO functional data and prepare regression variables.
+
+    Parameters
+    ----------
+    nc_path : str
+        Path to NetCDF file.
+
+    weekly_price : array-like or None
+        Weekly scalar response variable.
+        If provided, will be converted to numpy array and reversed.
+
+    Returns
+    -------
+    W : ndarray
+        Salinity functional data. Shape: (time, depth)
+
+    M : ndarray
+        Temperature functional data. Shape: (time, depth)
+
+    Y : ndarray or None
+        Scalar response variable.
+
+    t : ndarray
+        Normalized depth grid in [0, 1].
+
+    x_space : ndarray
+        Same as t.
+
+    weeks : ndarray
+        Original time axis from dataset.
+
+    depths : ndarray
+        Original depth axis from dataset.
+
+    final_array : ndarray
+        Combined array with shape:
+        (time, depth, 2)
+
+        final_array[:, :, 0] = TEMP
+        final_array[:, :, 1] = PSAL
+    """
+
+    # --------------------------------------------------
+    # Read dataset
+    # --------------------------------------------------
+    ds = xr.open_dataset(nc_path)
+
+    # --------------------------------------------------
+    # Extract variables
+    # --------------------------------------------------
+    temp = ds["argo_weekly"].sel(variable="TEMP").values
+    psal = ds["argo_weekly"].sel(variable="PSAL").values
+
+    # --------------------------------------------------
+    # Coordinates
+    # --------------------------------------------------
+    weeks = ds["time"].values
+    depths = ds["depth"].values
+
+    # --------------------------------------------------
+    # Combine into one tensor
+    # --------------------------------------------------
+    final_array = np.stack((temp, psal), axis=-1)
+
+    print("final_array shape:", final_array.shape)
+
+    # --------------------------------------------------
+    # Functional variables
+    # --------------------------------------------------
+    W = final_array[:, :, 1]   # PSAL
+    M = final_array[:, :, 0]   # TEMP
+
+    # --------------------------------------------------
+    # Response variable
+    # --------------------------------------------------
+    if weekly_price is not None:
+        Y = np.array(weekly_price[::-1])
+    else:
+        Y = None
+
+    # --------------------------------------------------
+    # Functional grid
+    # --------------------------------------------------
+    T = W.shape[1]
+
+    x_space = np.linspace(0, 1, T)
+    t = np.linspace(0, 1, T)
+
+    return W, M, Y, t, x_space, weeks, depths, final_array
+
