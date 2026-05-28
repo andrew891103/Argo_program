@@ -764,3 +764,154 @@ def generate_functional_data_FPCA_decreasing_variance(
     print(explained)
 
     return X, W, M, Y, beta_true, t
+
+def generate_functional_data_GP_SNR(
+    n,
+    T,
+    SNR,
+    seed=None
+):
+    """
+    Generate functional regression data using Gaussian Processes
+    with Squared Exponential kernels.
+
+    Model
+    -----
+    X(t) ~ GP(mean_X, K_X)
+
+    W(t) = X(t) + U(t)
+
+    M(t) = X(t) + omega(t)
+
+    Y = integral beta(t) X(t) dt + eps
+
+    SNR := Var(X) / Var(U)
+    """
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    # --------------------------------------------------
+    # Grid
+    # --------------------------------------------------
+    t = np.linspace(0, 1, T)
+
+    # --------------------------------------------------
+    # True beta
+    # --------------------------------------------------
+    beta_true = 15 * t * np.exp(-8 * t)
+
+    # --------------------------------------------------
+    # Mean functions
+    # --------------------------------------------------
+    mean_X = np.sin(2 * np.pi * t)
+
+    mean_U = np.zeros(T)
+
+    mean_omega = np.zeros(T)
+
+    # --------------------------------------------------
+    # Squared Exponential Kernel
+    # --------------------------------------------------
+    def SE_kernel(t, sigma, length_scale):
+        """
+        Squared Exponential covariance kernel
+        """
+        sqdist = (t[:, None] - t[None, :]) ** 2
+
+        return sigma**2 * np.exp(
+            -sqdist / (2 * length_scale**2)
+        )
+
+    # --------------------------------------------------
+    # X process
+    # --------------------------------------------------
+    sigma_X = 0.1
+    ell_X = 0.2
+
+    K_X = SE_kernel(
+        t,
+        sigma=sigma_X,
+        length_scale=ell_X
+    )
+
+    X = np.random.multivariate_normal(
+        mean=mean_X,
+        cov=K_X,
+        size=n
+    )
+
+    # empirical variance for SNR calibration
+    var_X = np.var(X)
+
+    # --------------------------------------------------
+    # Measurement error process U
+    # --------------------------------------------------
+    sigma_U = np.sqrt(var_X / SNR)
+
+    ell_U = 0.1
+
+    K_U = SE_kernel(
+        t,
+        sigma=sigma_U,
+        length_scale=ell_U
+    )
+
+    U = np.random.multivariate_normal(
+        mean=mean_U,
+        cov=K_U,
+        size=n
+    )
+
+    # --------------------------------------------------
+    # IV noise process omega
+    # --------------------------------------------------
+    sigma_omega = 0.25
+    ell_omega = 0.15
+
+    K_omega = SE_kernel(
+        t,
+        sigma=sigma_omega,
+        length_scale=ell_omega
+    )
+
+    omega = np.random.multivariate_normal(
+        mean=mean_omega,
+        cov=K_omega,
+        size=n
+    )
+
+    # --------------------------------------------------
+    # Observed functional processes
+    # --------------------------------------------------
+    W = X + U
+
+    M = X + omega
+
+    # --------------------------------------------------
+    # Scalar response
+    # --------------------------------------------------
+    sigma_eps = 0.05
+
+    signal = np.trapezoid(
+        beta_true * X,
+        t,
+        axis=1
+    )
+
+    Y = signal + np.random.normal(
+        0,
+        sigma_eps,
+        size=n
+    )
+
+    # --------------------------------------------------
+    # Diagnostics
+    # --------------------------------------------------
+    print(f"SNR target = {SNR}")
+    print(f"Var(X)      = {var_X:.4f}")
+    print(f"sigma_U     = {sigma_U:.4f}")
+
+    return X, W, M, Y, beta_true, t
+
+
