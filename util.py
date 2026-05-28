@@ -621,3 +621,146 @@ def generate_functional_data_decreasing_variance(n, T, SNR, seed=None):
     print(f"sigma_U set to {sigma_U:.4f}")
 
     return X, W, M, Y, beta_true, t
+
+def generate_functional_data_FPCA_decreasing_variance(
+    n,
+    T,
+    SNR,
+    seed=None,
+    K_true=3
+):
+    """
+    FPCA-friendly functional data
+    with variance decreasing as t increases.
+    """
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    if K_true > 7:
+        raise ValueError(
+            "Current implementation only supports K_true <= 7"
+        )
+
+    # --------------------------------------------------
+    # Grid
+    # --------------------------------------------------
+    t = np.linspace(0, 1, T)
+    dt = t[1] - t[0]
+
+    # --------------------------------------------------
+    # True beta(t)
+    # --------------------------------------------------
+    beta_true = (
+        1.5 * np.sin(2 * np.pi * t)
+        + 0.5 * np.cos(4 * np.pi * t)
+    )
+
+    # --------------------------------------------------
+    # Variance decay envelope
+    # large variance near t=0
+    # small variance near t=1
+    # --------------------------------------------------
+    decay = (1 - t)**0.7 + 0.05
+
+    # --------------------------------------------------
+    # True eigenfunctions phi_k(t)
+    # --------------------------------------------------
+    phi1 = decay * np.sqrt(2) * np.sin(np.pi * t)
+    phi2 = decay * np.sqrt(2) * np.cos(2 * np.pi * t)
+    phi3 = decay * np.sqrt(2) * np.sin(3 * np.pi * t)
+    phi4 = decay * np.sqrt(2) * np.cos(4 * np.pi * t)
+    phi5 = decay * np.sqrt(2) * np.sin(5 * np.pi * t)
+    phi6 = decay * np.sqrt(2) * np.cos(6 * np.pi * t)
+    phi7 = decay * np.sqrt(2) * np.sin(7 * np.pi * t)
+
+    Phi = np.vstack([
+        phi1,
+        phi2,
+        phi3,
+        phi4,
+        phi5,
+        phi6,
+        phi7
+    ])[:K_true]
+
+    # --------------------------------------------------
+    # FPCA eigenvalues
+    # --------------------------------------------------
+    lambdas = np.array([
+        1.5,
+        0.7,
+        0.3,
+        0.15,
+        0.08,
+        0.04,
+        0.02
+    ])[:K_true]
+
+    # --------------------------------------------------
+    # FPCA scores
+    # --------------------------------------------------
+    scores = np.random.normal(
+        0,
+        np.sqrt(lambdas),
+        size=(n, K_true)
+    )
+
+    # --------------------------------------------------
+    # Construct latent X(t)
+    # --------------------------------------------------
+    X = scores @ Phi
+
+    # small residual noise
+    X += 0.05 * np.random.normal(size=(n, T))
+
+    # --------------------------------------------------
+    # SNR calibration
+    # --------------------------------------------------
+    var_X = np.var(X)
+
+    sigma_U = np.sqrt(var_X / SNR)
+
+    # --------------------------------------------------
+    # Noises
+    # --------------------------------------------------
+    sigma_eps = 0.05
+    sigma_omega = 0.25
+
+    U = np.random.normal(0, sigma_U, size=(n, T))
+    omega = np.random.normal(0, sigma_omega, size=(n, T))
+
+    # --------------------------------------------------
+    # Observed variables
+    # --------------------------------------------------
+    W = X + U
+    M = X + omega
+
+    # --------------------------------------------------
+    # Scalar response
+    # --------------------------------------------------
+    signal = np.trapezoid(
+        beta_true * X,
+        t,
+        axis=1
+    )
+
+    Y = signal + np.random.normal(
+        0,
+        sigma_eps,
+        size=n
+    )
+
+    # --------------------------------------------------
+    # Diagnostics
+    # --------------------------------------------------
+    print(f"SNR target = {SNR}")
+    print(f"sigma_U = {sigma_U:.4f}")
+    print(f"Var(X) = {var_X:.4f}")
+
+    explained = lambdas / np.sum(lambdas)
+
+    print("True variance ratios:")
+    print(explained)
+
+    return X, W, M, Y, beta_true, t
